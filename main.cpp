@@ -1,4 +1,5 @@
 #include "raylib.h"
+//#include "item.hpp"
 #include <vector>
 #include <cmath>
 
@@ -33,7 +34,8 @@ int main() {
     const int screenHeight = 800;
 
     const float attackRange = 70.0f;
-    const int attackDamage = 10;
+    const int attackDamage = 20;
+    //const int swordDamage = 20;
     float attackCooldown = 0.2f;
     float timeSinceLastAttack = 0.0f;
 
@@ -129,7 +131,7 @@ int main() {
                 }
             }
 
-            if(IsKeyDown(KEY_F) && player.wood >= requiredmat) {
+            if(IsKeyPressed(KEY_F) && player.wood >= requiredmat) {
                 Campfire c;
                 c.pos = player.pos;
                 campfires.push_back(c);

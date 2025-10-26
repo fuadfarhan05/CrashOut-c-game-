@@ -25,8 +25,7 @@ struct Zombie {
 struct Campfire {
     Vector2 pos;
     bool active = true;
-    float healRadius = 80.0f; // heal range
-    
+    float healRadius = 80.0f; // heal range 
 };
 
 int main() {
@@ -135,7 +134,7 @@ int main() {
                 Campfire c;
                 c.pos = player.pos;
                 campfires.push_back(c);
-                player.wood -= requiredmat; 
+                player.wood -= requiredmat;
             }
 
             for(auto &c : campfires) {

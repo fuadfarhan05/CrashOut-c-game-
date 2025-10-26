@@ -1,25 +1,12 @@
 #include "raylib.h"
-//#include "item.hpp"
+#include "entities.hpp"
+#include "projectile.hpp"
 #include <vector>
 #include <cmath>
-
-struct Player {
-    Vector2 pos;
-    float speed;
-    int wood = 0;
-    int health = 100;
-};
 
 struct Tree {
     Vector2 pos;
     bool chopped = false;
-};
-
-struct Zombie {
-    Vector2 pos;
-    float speed = 1.5f;
-    bool spawn = false;
-    int health = 30;
 };
 
 struct Campfire {
@@ -27,6 +14,8 @@ struct Campfire {
     bool active = true;
     float healRadius = 80.0f; // heal range 
 };
+
+
 
 int main() {
     const int screenWidth = 800;
@@ -48,7 +37,9 @@ int main() {
     InitWindow(screenWidth, screenHeight, "CrashOut");
     SetTargetFPS(60);
 
-    Player player = { {400, 300}, 4.0f };
+    Player player;
+    player.pos = {400, 300};
+    player.speed = 4.0f;
 
     std::vector<Campfire> campfires;
     const int requiredmat = 10;
@@ -69,6 +60,11 @@ int main() {
         t.pos = { (float)GetRandomValue(100, 1500), (float)GetRandomValue(100, 1500) };
         trees.push_back(t);
     }
+
+    // Pickups (dropped ammo)
+    std::vector<Pickup> pickups;
+
+    const int bowWoodCost = 5; // craft bow cost
 
     Camera2D camera = {0};
     camera.target = player.pos;
@@ -129,6 +125,33 @@ int main() {
                     }
                 }
             }
+
+            // Bow shooting (left mouse) - requires bow
+            if(player.hasBow && IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && timeSinceLastAttack >= attackCooldown) {
+                int typeIndex = (int)player.selectedArrow;
+                if(player.ammo[typeIndex] > 0) {
+                    timeSinceLastAttack = 0.0f;
+                    Vector2 mouseScreen = GetMousePosition();
+                    Vector2 mouseWorld = GetScreenToWorld2D(mouseScreen, camera);
+                    Vector2 spawnPos = { player.pos.x + 15.0f, player.pos.y + 15.0f };
+                    Vector2 dir = { mouseWorld.x - spawnPos.x, mouseWorld.y - spawnPos.y };
+                    float len = sqrt(dir.x*dir.x + dir.y*dir.y);
+                    if(len != 0) { dir.x /= len; dir.y /= len; }
+                    projectile::SpawnArrow(spawnPos, dir, player.selectedArrow);
+                    player.ammo[typeIndex]--;
+                }
+            }
+
+            // Craft bow with 'B' if enough wood
+            if(IsKeyPressed(KEY_B) && !player.hasBow && player.wood >= bowWoodCost) {
+                player.hasBow = true;
+                player.wood -= bowWoodCost;
+            }
+
+            // Switch arrow types 1/2/3
+            if(IsKeyPressed(KEY_ONE)) player.selectedArrow = ARROW_NORMAL;
+            if(IsKeyPressed(KEY_TWO)) player.selectedArrow = ARROW_FIRE;
+            if(IsKeyPressed(KEY_THREE)) player.selectedArrow = ARROW_PIERCING;
 
             if(IsKeyPressed(KEY_F) && player.wood >= requiredmat) {
                 Campfire c;
@@ -205,6 +228,28 @@ int main() {
                 }
             }
 
+            // Update projectiles (movement, collisions, burn, drops)
+            projectile::UpdateProjectiles(deltaTime, zombies, player, pickups);
+
+            // Process pickups (collect by player)
+            Rectangle playerRect = { player.pos.x, player.pos.y, 40,40 };
+            for(auto &p : pickups) {
+                if(!p.active) continue;
+                Rectangle pr = { p.pos.x, p.pos.y, 12, 12 };
+                if(CheckCollisionRecs(playerRect, pr)) {
+                    if(p.givesBow) {
+                        // give the player a bow and some ammo bonuses
+                        player.hasBow = true;
+                        player.ammo[0] += 5; // normal
+                        player.ammo[1] += 1; // fire
+                        player.ammo[2] += 1; // piercing
+                    } else {
+                        player.ammo[(int)p.type] += p.amount;
+                    }
+                    p.active = false;
+                }
+            }
+
             camera.target = player.pos;
         }
 
@@ -243,6 +288,32 @@ int main() {
                     break;
                 }
             }
+
+            // Draw pickups
+            for(auto &p : pickups) {
+                if(!p.active) continue;
+                if(p.givesBow) {
+                    // draw a simple bow icon: curved body + string
+                    Vector2 center = { p.pos.x + 6, p.pos.y + 6 };
+                    // bow body (arc simulated with two lines)
+                    DrawLine((int)(center.x - 6), (int)(center.y - 6), (int)(center.x - 6), (int)(center.y + 6), BROWN);
+                    DrawLine((int)(center.x - 6), (int)(center.y - 6), (int)(center.x + 4), (int)(center.y - 2), BROWN);
+                    DrawLine((int)(center.x - 6), (int)(center.y + 6), (int)(center.x + 4), (int)(center.y + 2), BROWN);
+                    // string
+                    DrawLine((int)(center.x + 4), (int)(center.y - 2), (int)(center.x + 4), (int)(center.y + 2), BLACK);
+                    DrawText("Bow", p.pos.x - 2, p.pos.y - 12, 10, RAYWHITE);
+                } else {
+                    Color col = WHITE;
+                    if(p.type == ARROW_NORMAL) col = LIGHTGRAY;
+                    else if(p.type == ARROW_FIRE) col = ORANGE;
+                    else if(p.type == ARROW_PIERCING) col = SKYBLUE;
+                    DrawRectangle(p.pos.x, p.pos.y, 12, 12, col);
+                    DrawText(TextFormat("%d", p.amount), p.pos.x, p.pos.y - 12, 10, BLACK);
+                }
+            }
+
+            // Draw projectiles
+            projectile::DrawProjectiles();
             
 
             DrawRectangle(player.pos.x, player.pos.y, 30, 30, RED);
@@ -281,6 +352,11 @@ int main() {
             // Controls
             int controlsY = woodY + 25;
             DrawText("WASD = move, E = chop, SPACE = attack", hudX, controlsY, 15, RAYWHITE);
+            // Bow / arrows HUD
+            int bowY = controlsY + 25;
+            DrawText(TextFormat("Bow: %s (Press B to craft for %d wood)", player.hasBow ? "Owned" : "None", bowWoodCost), hudX, bowY, 15, RAYWHITE);
+            int ammoY = bowY + 20;
+            DrawText(TextFormat("1:Normal[%d] 2:Fire[%d] 3:Pierce[%d]  (Selected: %d)", player.ammo[0], player.ammo[1], player.ammo[2], (int)player.selectedArrow + 1), hudX, ammoY, 14, RAYWHITE);
         }
 
         EndDrawing();
